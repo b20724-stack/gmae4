@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏝️ 3D 무인도 불꽃 원소 탐험대 (index.html) 🏝️</title>
+    <!-- Three.js 라이브러리 로드 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background-color: #87ceeb;
+            font-family: 'Malgun Gothic', sans-serif;
+            user-select: none;
+        }
+
+        #game-view {
+            width: 100vw; height: 100vh;
+            display: block;
+        }
+
+        /* 깔끔해진 레이더 미니맵 (길 표시 없이 원소 위치만 스캔) */
+        #radar-panel {
+            position: absolute;
+            top: 20px; left: 20px;
+            width: 160px; height: 160px;
+            background: rgba(12, 35, 28, 0.8);
+            border: 4px solid #eab308;
+            border-radius: 50%;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+            z-index: 10;
+            overflow: hidden;
+        }
+        #radar-screen {
+            width: 100%; height: 100%;
+            position: relative;
+        }
+        #radar-center {
+            position: absolute;
+            width: 10px; height: 10px;
+            background: #ffffff;
+            border: 2px solid #ef4444;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 8px #fff;
+            z-index: 15;
+        }
+        .element-marker {
+            position: absolute;
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 12;
+            box-shadow: 0 0 6px #fff;
+        }
+
+        /* 설명용 말풍선 박스 */
+        #bubble-box {
+            display: none;
+            position: absolute;
+            bottom: 40px; left: 50%;
+            transform: translateX(-50%);
+            width: 85%; max-width: 650px;
+            background: #fffef7;
+            border: 5px solid #eab308;
+            border-radius: 24px;
+            padding: 22px;
+            box-shadow: 0 16px 40px rgba(0,0,0,0.35);
+            z-index: 20;
+        }
+        #bubble-text {
+            margin: 0 0 12px 0;
+            font-size: 17px;
+            font-weight: bold;
+            color: #451a03;
+            line-height: 1.6;
+            white-space: pre-line;
+        }
+        .guide-text {
+            text-align: right;
+            font-size: 13px;
+            color: #ca8a04;
+            font-weight: bold;
+            animation: flash 1.2s infinite;
+        }
+        @keyframes flash {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+
+        /* 최종 완공 도감 화면 */
+        #clear-modal {
+            display: none;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(15, 23, 42, 0.9);
+            justify-content: center; align-items: center;
+            z-index: 30;
+        }
+        .modal-body {
+            width: 90%; max-width: 480px;
+            background: #ffffff;
+            padding: 30px; border-radius: 26px;
+            border: 5px solid #22c55e;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.4);
+            text-align: center;
+        }
+        .element-row {
+            display: flex; justify-content: space-between;
+            padding: 10px 15px; margin: 6px 0;
+            border-radius: 12px; font-weight: bold;
+        }
+
+        /* 조작 가이드 우측 하단 */
+        #control-panel {
+            position: absolute;
+            bottom: 20px; right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #1e293b;
+            padding: 14px 18px;
+            border-radius: 16px;
+            font-size: 13px; font-weight: bold;
+            line-height: 1.6; pointer-events: none;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            border: 2px solid #cbd5e1;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-view"></div>
+
+    <!-- 미니맵 레이더 -->
+    <div id="radar-panel">
+        <div id="radar-screen">
+            <div id="radar-center"></div>
+        </div>
+    </div>
+
+    <!-- 무인도 생태계 가이드 -->
+    <div id="control-panel">
+        🏝️ 자연의 무인도 탐험가<br>
+        • 이동: 방향키(↑ ↓ ← →) 또는 W, A, S, D<br>
+        • 자유 통행: 길이 없어도 어디든 자유롭게 걸어 다닐 수 있어요!<br>
+        • 말풍선 넘기기: 키보드 [ 스페이스바 (Space) ]
+    </div>
+
+    <!-- 대화 말풍선 -->
+    <div id="bubble-box">
+        <p id="bubble-text"></p>
+        <div class="guide-text">⌨️ [ 스페이스바 ]를 누르면 도감에 저장하고 창을 닫습니다.</div>
+    </div>
+
+    <!-- 엔딩 창 -->
+    <div id="clear-modal">
+        <div class="modal-body">
+            <h2 style="color: #15803d; margin-top:0;">🌋 무인도 불꽃 원소 도감 완성! 🌋</h2>
+            <p style="color:#64748b; font-size:14px; margin-bottom:20px;">자유롭게 자연을 누비며 모든 불꽃색 원소를 성공적으로 채집했습니다!</p>
+            <div style="text-align: left; margin-bottom: 22px;">
+                <div class="element-row" style="background:#fee2e2; color:#b91c1c;"><span>리튬 (Li) - 높은 바위산 정상</span><span>빨간색 🔴</span></div>
+                <div class="element-row" style="background:#ffe4e6; color:#be123c;"><span>스트론튬 (Sr) - 화산재 가파른 계곡</span><span>진한 빨간색 🚨</span></div>
+                <div class="element-row" style="background:#fef9c3; color:#a16207;"><span>나트륨 (Na) - 하얀 파도 해변가</span><span>노란색 🟡</span></div>
+                <div class="element-row" style="background:#f0fdf4; color:#15803d;"><span>바륨 (Ba) - 야자수 우림 언덕</span><span>황록색 🍏</span></div>
+                <div class="element-row" style="background:#ccfbf1; color:#0f766e;"><span>구리 (Cu) - 어두운 리얼 동굴 안</span><span>청록색 🟢</span></div>
+                <div class="element-row" style="background:#f3e8ff; color:#6d28d9;"><span>칼륨 (K) - 동굴 너머 비밀 비탈</span><span>보라색 🟣</span></div>
+                <div class="element-row" style="background:#ffedd5; color:#c2410c;"><span>칼슘 (Ca) - 야생 수풀 지대</span><span>주황색 🟠</span></div>
+            </div>
+            <button style="width:100%; padding:14px; background:#22c55e; color:white; border:none; border-radius:12px; font-weight:bold; cursor:pointer;" onclick="window.location.reload()">새로운 섬 탐험하기 🔄</button>
+        </div>
+    </div>
+
+    <script>
+        let scene, camera, renderer;
+        let player, flameLayers = [];
+        let water;
+        let birds = [], clouds = [];
+        let keys = { w: false, a: false, s: false, d: false };
+        let collected = new Set();
+        let isChatting = false;
+
+        const MAP_LIMIT = 80;
+        const BASE_ORANGE = 0xff5500;
+
+        // 원소 장소 배치 (동굴, 높은 산 등 입체 고도 테마 반영)
+        const ELEMENTS = [
+            { id: 'Lithium', color: 0xff0000, x: 0, z: -40, r: 8, msg: "🦅 산신령 불새:\n와우! 무인도에서 가장 높은 바위산 정상 꼭대기야! 척박한 고지대에서 붉게 빛나는 '리튬(Li)'을 찾았어. 활활 타오르는 빨간색🔴 불꽃 폼 체인지!" },
+            { id: 'Copper', color: 0x00ffcc, x: 35, z: -10, r: 8, msg: "🦇 동굴 박쥐:\n바위 오르막길 중턱에 숨겨진 깊고 어두운 '진짜 동굴(Cave)' 안쪽이야! 습한 바위 틈새에서 새어 나오는 '구리(Cu)' 성분과 반응해서 불꽃이 신비로운 청록색🟢으로 일렁거려!" },
+            { id: 'Sodium', color: 0xffff00, x: -45, z: 35, r: 8, msg: "🐢 해변 거북이:\n파도가 하얗게 부서져 내리는 해안가 백사장이야. 짭조름한 조개껍데기와 모래 속에 가득한 '나트륨(Na)' 에너지를 흡수하니 눈부신 노란색🟡 불꽃 스킨이 완성됐어!" },
+            { id: 'Potassium', color: 0xa855f7, x: 35, z: -35, r: 8, msg: "🔮 수정 나비:\n동굴을 따라 더 깊숙이 내려온 비밀 바위 협곡 바닥이야! 원소 '칼륨(K)'의 순수한 정수가 일렁이며 신비한 보라색🟣 불꽃으로 네 모습을 진화시켜 줬어!" },
+            { id: 'Calcium', color: 0xffaa00, x: -20, z: -20, r: 8, msg: "🐒 야생 원숭이:\n풀과 나무가 빽빽하게 자라난 자연 그대로의 야생 수풀림 지대야. 단단한 칼슘 바위에서 발산되는 '칼슘(Ca)' 광석 에너지 덕분에 부드럽고 따뜻한 주황색🟠 불꽃이 피어올라!" },
+            { id: 'Strontium', color: 0xff0055, x: -10, z: 15, r: 8, msg: "🦎 야생 도마뱀:\n화산재가 흘러내린 가파른 골짜기 비탈길이야! 리튬이랑 비슷해 보이지만, 이 원소는 '스트론튬(Sr)'이라서 훨씬 짙고 선명한 진빨간색🚨 아우라를 뿜어내지!" },
+            { id: 'BaRium', color: 0x84cc16, x: 25, z: 35, r: 8, msg: "🌿 울창한 야자 정령:\n야자수 잎사귀가 가람바람에 흩날리는 정글 언덕 위야. 대자연의 생명력을 품은 원소 '바륨(Ba)'과 교감하면서 싱그러운 황록색🍏 불꽃이 피어났어!" }
+        ];
+
+        // [입체 3D 지형 함수] 위치에 따른 완벽한 고도(Y값) 지형 생성
+        function queryHeight(x, z) {
+            let dist = Math.sqrt(x*x + z*z);
+            if (dist > MAP_LIMIT) return -5; // 바다 수면 아래
+
+            // 1. 북쪽 중앙 높은 바위산 (리튬 포인트: 최대 고도 12)
+            let mountain = 0;
+            let mDist = Math.sqrt(x*x + (z+40)*(z+40));
+            if (mDist < 35) {
+                mountain = (35 - mDist) * 0.45;
+            }
+
+            // 2. 동쪽 동굴 바위산 오르막 (구리/칼륨 포인트: 최대 고도 7)
+            let caveHill = 0;
+            let cDist = Math.sqrt((x-35)*(x-35) + (z+20)*(z+20));
+            if (cDist < 25) {
+                caveHill = (25 - cDist) * 0.35;
+            }
+
+            // 3. 외곽 해변으로 갈수록 부드럽게 낮아지는 경사면
+            let islandBase = (MAP_LIMIT - dist) * 0.08;
+
+            return -2 + islandBase + mountain + caveHill;
+        }
+
+        init();
+        animate();
+
+        function init() {
+            // Scene & Renderer 세팅
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xbae6fd); // 맑고 아기자기한 하늘색 배경
+            scene.fog = new THREE.FogExp2(0xbae6fd, 0.008);
+
+            // 카메라: 1M 앞의 유치원생을 대각선 위에서 정성스럽게 내려다보는 3D 백뷰 시선 고정
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.getElementById('game-view').appendChild(renderer.domElement);
+
+            // 환경 자연광 배치
+            let ambient = new THREE.AmbientLight(0xffffff, 0.65);
+            scene.add(ambient);
+            let sun = new THREE.DirectionalLight(0xffffff, 0.7);
+            sun.position.set(30, 90, 20);
+            sun.castShadow = true;
+            scene.add(sun);
+
+            // 1. 출렁거리는 리얼 3D 바다 레이어 생성
+            let waterGeo = new THREE.PlaneGeometry(350, 350, 30, 30);
+            let waterMat = new THREE.MeshStandardMaterial({
+                color: 0x0ea5e9, roughness: 0.15, transparent: true, opacity: 0.85, flatShading: true
+            });
+            water = new THREE.Mesh(waterGeo, waterMat);
+            water.rotation.x = -Math.PI / 2;
+            water.position.y = -2.5;
+            scene.add(water);
+
+            // 2. 무인도 입체 지형 메쉬 생성 (완벽한 초록색 바탕 무인도 자연 느낌 세팅)
+            let landGeo = new THREE.PlaneGeometry(180, 180, 80, 80);
+            landGeo.rotateX(-Math.PI / 2);
+            let pos = landGeo.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                let vx = pos.getX(i);
+                let vz = pos.getZ(i);
+                pos.setY(i, queryHeight(vx, vz));
+            }
+            landGeo.computeVertexNormals();
+
+            let landMat = new THREE.MeshStandardMaterial({
+                color: 0x4ade80, roughness: 0.85, flatShading: true // 모동숲 느낌의 산뜻한 잔디 초록 바탕 만족
+            });
+            let landMesh = new THREE.Mesh(landGeo, landMat);
+            landMesh.receiveShadow = true;
+            scene.add(landMesh);
+
+            // 3. [진짜 동굴(Cave) 구현] 오브젝트 배치
+            // 동쪽 오르막길 중턱(35, -10)에 입체적인 동굴 동공 터널을 생성
+            let caveGroup = new THREE.Group();
+            caveGroup.position.set(35, queryHeight(35, -20), -20);
+            scene.add(caveGroup);
+
+            // 거대한 바위더미들을 겹쳐 동굴 천장과 입구 형태 모델링
+            for(let i=0; i<8; i++) {
+                let rockGeo = new THREE.DodecahedronGeometry(4 + Math.random()*2);
+                let rockMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.9 });
+                let rock = new THREE.Mesh(rockGeo, rockMat);
+                rock.position.set(Math.sin(i)*5, 3 + Math.cos(i)*2, Math.cos(i)*5);
+                caveGroup.add(rock);
+            }
+
+            // 4. 무인도 생태계 오브젝트 심기 (나무, 풀, 돌덩이 무작위 자연 배치)
+            for(let i=0; i<120; i++) {
+                let rx = (Math.random() - 0.5) * 130;
+                let rz = (Math.random() - 0.5) * 130;
+                let ry = queryHeight(rx, rz);
+
+                if(ry > -1) { // 물속이 아닌 지상에만 생성
+                    let decoGroup = new THREE.Group();
+                    decoGroup.position.set(rx, ry, rz);
+
+                    if(Math.random() > 0.4) {
+                        // 야생 나무 모델링 (기둥 + 초록 잎사귀 뭉치)
+                        let trunkGeo = new THREE.CylinderGeometry(0.2, 0.4, 2);
+                        let trunkMat = new THREE.MeshStandardMaterial({ color: 0x78350f });
+                        let trunk = new THREE.Mesh(trunkGeo, trunkMat);
+                        trunk.position.y = 1;
+                        decoGroup.add(trunk);
+
+                        let leafGeo = new THREE.SphereGeometry(1.2, 5, 5);
+                        let leafMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.9, flatShading:true });
+                        let leaf = new THREE.Mesh(leafGeo, leafMat);
+                        leaf.position.y = 2.2;
+                        decoGroup.add(leaf);
+                    } else {
+                        // 야생 수풀 코어 / 자연 바위 데코
+                        let bushGeo = new THREE.DodecahedronGeometry(0.6);
+                        let bushMat = new THREE.MeshStandardMaterial({ color: 0x15803d, flatShading:true });
+                        let bush = new THREE.Mesh(bushGeo, bushMat);
+                        bush.position.y = 0.2;
+                        decoGroup.add(bush);
+                    }
+                    scene.add(decoGroup);
+                }
+            }
+
+            // 5. 하늘에 떠다니는 뭉게구름(Clouds) 생성
+            for(let i=0; i<12; i++) {
+                let cloudGeo = new THREE.SphereGeometry(4 + Math.random()*3, 6, 6);
+                let cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+                let cloud = new THREE.Mesh(cloudGeo, cloudMat);
+                cloud.position.set((Math.random()-0.5)*160, 20 + Math.random()*8, (Math.random()-0.5)*160);
+                scene.add(cloud);
+                clouds.push(cloud);
+            }
+
+            // 6. 하늘을 날아다니는 자유로운 야생 새(Birds) 배치
+            for(let i=0; i<6; i++) {
+                let birdGeo = new THREE.ConeGeometry(0.3, 1.2, 3);
+                birdGeo.rotateX(Math.PI/2);
+                let birdMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+                let bird = new THREE.Mesh(birdGeo, birdMat);
+                bird.position.set((Math.random()-0.5)*80, 12 + Math.random()*5, (Math.random()-0.5)*80);
+                scene.add(bird);
+                birds.push({ mesh: bird, speed: 0.1 + Math.random()*0.1, phase: Math.random()*10 });
+            }
+
+            // 7. 7가지 핵심 원소 입체 유물 오브젝트 깔기
+            ELEMENTS.forEach(e => {
+                let gemGeo = new THREE.OctahedronGeometry(1.5);
+                let gemMat = new THREE.MeshStandardMaterial({
+                    color: e.color, emissive: e.color, emissiveIntensity: 0.6, roughness: 0.1
+                });
+                let gem = new THREE.Mesh(gemGeo, gemMat);
+                gem.position.set(e.x, queryHeight(e.x, e.z) + 1.8, e.z);
+                scene.add(gem);
+            });
+
+            // 8. 엘리멘탈 스타일 활활 일렁이는 3D 불꽃 캐릭터 생성
+            player = new THREE.Group();
+            player.position.set(0, queryHeight(0, 0) + 0.5, 10); // 정중앙 평지 근처 스타트
+            scene.add(player);
+
+            for (let i = 0; i < 18; i++) {
+                let flameGeo = new THREE.ConeGeometry(0.35, 1.5, 4);
+                let flameMat = new THREE.MeshBasicMaterial({
+                    color: BASE_ORANGE, transparent: true, opacity: 0.7 + Math.random()*0.3
+                });
+                let fMesh = new THREE.Mesh(flameGeo, flameMat);
+                fMesh.position.set((Math.random()-0.5)*0.4, Math.random()*0.5, (Math.random()-0.5)*0.4);
+                player.add(fMesh);
+                flameLayers.push(fMesh);
+            }
+
+            // 키 이벤트 연동
+            window.addEventListener('keydown', handleKeyDown);
+            window.addEventListener('keyup', handleKeyUp);
+            window.addEventListener('resize', onWindowResize);
+
+            // 레이더 미니맵 원소 고정 도트 주입
+            initRadar();
+        }
+
+        function handleKeyDown(e) {
+            let k = e.key.toLowerCase();
+            if (k === 'w' || e.key === 'ArrowUp') keys.w = true;
+            if (k === 's' || e.key === 'ArrowDown') keys.s = true;
+            if (k === 'a' || e.key === 'ArrowLeft') keys.a = true;
+            if (k === 'd' || e.key === 'ArrowRight') keys.d = true;
+
+            // [요구사항 반영] 스페이스바 입력 시 말풍선 즉시 패스
+            if (e.key === ' ' || e.code === 'Space') {
+                if (isChatting) {
+                    e.preventDefault();
+                    closeBubble();
+                }
+            }
+        }
+
+        function handleKeyUp(e) {
+            let k = e.key.toLowerCase();
+            if (k === 'w' || e.key === 'ArrowUp') keys.w = false;
+            if (k === 's' || e.key === 'ArrowDown') keys.s = false;
+            if (k === 'a' || e.key === 'ArrowLeft') keys.a = false;
+            if (k === 'd' || e.key === 'ArrowRight') keys.d = false;
+        }
+
+        // [요구사항 반영] 1M 앞의 유치원생을 비스듬히 내려다보는 쿼터 백뷰 카메라 시스템 트래킹
+        function updateCameraView() {
+            camera.position.set(player.position.x, player.position.y + 7.0, player.position.z + 10.0);
+            camera.lookAt(player.position.x, player.position.y + 1.2, player.position.z);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            let ticks = performance.now() * 0.002;
+
+            // 1. 하얀 물결 파도 치는 바다 애니메이션 시뮬레이션
+            let wAttr = water.geometry.attributes.position;
+            for (let i = 0; i < wAttr.count; i++) {
+                let ux = wAttr.getX(i);
+                let uy = wAttr.getY(i);
+                let waveHeight = Math.sin(ux*0.08 + ticks) * 0.35 + Math.cos(uy*0.08 + ticks*1.2) * 0.25;
+                wAttr.setZ(i, waveHeight);
+            }
+            water.geometry.attributes.position.needsUpdate = true;
+
+            // 2. 구름 이동 및 야생 새 날개짓 회전 기동
+            clouds.forEach(c => {
+                c.position.x += 0.02;
+                if(c.position.x > MAP_LIMIT * 1.5) c.position.x = -MAP_LIMIT * 1.5;
+            });
+            birds.forEach(b => {
+                b.mesh.position.x += Math.sin(ticks + b.phase) * 0.1;
+                b.mesh.position.z += b.speed;
+                if(b.mesh.position.z > MAP_LIMIT) b.mesh.position.z = -MAP_LIMIT;
+            });
+
+            // 3. [요구사항 반영] 고정된 길이 없는 완전 자유로운 프리 무빙 및 실시간 언덕 고도 결합
+            if (!isChatting) {
+                let mx = 0, mz = 0;
+                let mvSpeed = 0.35;
+
+                if (keys.w) mz -= mvSpeed;
+                if (keys.s) mz += mvSpeed;
+                if (keys.a) mx -= mvSpeed;
+                if (keys.d) mx += mvSpeed;
+
+                let nextX = player.position.x + mx;
+                let nextZ = player.position.z + mz;
+
+                // 무인도 반경 바깥 이탈 검증 방지
+                if (Math.sqrt(nextX*nextX + nextZ*nextZ) < MAP_LIMIT - 6) {
+                    player.position.x = nextX;
+                    player.position.z = nextZ;
+                    
+                    // [핵심 요구사항] 오르막길을 오르고 내려갈 때 실시간 3D Y축 높이 동적 연산 매핑 완료!
+                    player.position.y = queryHeight(nextX, nextZ) + 0.4;
+                }
+            }
+
+            // 카메라 시선 즉시 갱신
+            updateCameraView();
+
+            // 4. 엘리멘탈 불꽃 입자 볼륨감 진동 애니메이션 효과
+            flameLayers.forEach((f, idx) => {
+                let fTick = ticks * 3.0 + idx;
+                f.scale.y = 1.0 + Math.sin(fTick) * 0.4;
+                f.scale.x = 1.0 + Math.cos(fTick * 1.3) * 0.25;
+                f.position.y = Math.sin(fTick * 0.7) * 0.12 + 0.6;
+            });
+
+            // 5. 원소 스팟 감지 및 리얼타임 색 변화 제어 연동
+            let matchedZone = null;
+            ELEMENTS.forEach(e => {
+                let d = Math.sqrt(Math.pow(player.position.x - e.x, 2) + Math.pow(player.position.z - e.z, 2));
+                if (d <= e.r) matchedZone = e;
+            });
+
+            if (matchedZone) {
+                // 진입 즉시 시그니처 원소 컬러 변형 활성화
+                flameLayers.forEach(f => f.material.color.setHex(matchedZone.color));
+
+                if (!collected.has(matchedZone.id) && !isChatting) {
+                    isChatting = true;
+                    let activeTarget = matchedZone;
+
+                    document.getElementById('bubble-text').innerText = activeTarget.msg.replace(/\n/g, '\n');
+                    document.getElementById('bubble-box').style.display = 'block';
+
+                    window.radarSuccessTrigger = () => {
+                        collected.add(activeTarget.id);
+                        if (collected.size >= 7) {
+                            document.getElementById('clear-modal').style.display = 'flex';
+                        }
+                    };
+                }
+            } else {
+                // 탈출 즉시 오리지널 오렌지 주황 파이어로 즉각 리셋!
+                flameLayers.forEach(f => f.material.color.setHex(BASE_ORANGE));
+            }
+
+            // 6. 미니맵 레이더 흰색 플레이어 위치 실시간 동기화
+            updateRadarUI();
+
+            renderer.render(scene, camera);
+        }
+
+        // 레이더 기본 셋업
+        function initRadar() {
+            let screen = document.getElementById('radar-screen');
+            ELEMENTS.forEach(e => {
+                let m = document.createElement('div');
+                m.className = 'element-marker';
+                m.style.backgroundColor = '#' + e.color.toString(16).padStart(6, '0');
+                m.style.left = ((e.x + MAP_LIMIT) / (MAP_LIMIT * 2) * 100) + '%';
+                m.style.top = ((e.z + MAP_LIMIT) / (MAP_LIMIT * 2) * 100) + '%';
+                screen.appendChild(m);
+            });
+        }
+
+        function updateRadarUI() {
+            let pMarker = document.getElementById('radar-center');
+            if (pMarker) {
+                pMarker.style.left = ((player.position.x + MAP_LIMIT) / (MAP_LIMIT * 2) * 100) + '%';
+                pMarker.style.top = ((player.position.z + MAP_LIMIT) / (MAP_LIMIT * 2) * 100) + '%';
+            }
+        }
+
+        function closeBubble() {
+            document.getElementById('bubble-box').style.display = 'none';
+            isChatting = false;
+            if (window.radarSuccessTrigger) {
+                window.radarSuccessTrigger();
+                window.radarSuccessTrigger = null;
+            }
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
